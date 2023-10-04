@@ -16,7 +16,7 @@ def parse():
     parser = argparse.ArgumentParser(description = "Parser for training the model")
     parser.add_argument('data_dir', nargs="+", help = 'Dataset director|Required', type = str)
     parser.add_argument('--save_dir',help = 'Directory to save | optional', default = './' , type = str)
-    parser.add_argument('--arch', help = 'Architecture | Options = [vgg16, densenet121, resnet50]', default='vgg16', type = str)
+    parser.add_argument('--arch', help = 'Architecture | Options = [vgg16, densenet121]', default='vgg16', type = str)
     parser.add_argument('--lr', help ='Learning rate', default = 0.001, type = float)
     parser.add_argument('--hidden_units', help = "A hidden layer's units | 4000", default = 4000, type = int)
     parser.add_argument('--epochs', help = 'Epochs', default = 5, type = int)
@@ -27,8 +27,9 @@ def parse():
 
     return args
 
-def transform_and_load(dataset_directory):
-    train_dir, valid_dir, test_dir = dataset_directory
+def transform_and_load(args):
+    data_dir = args["data_dir"][0]
+    train_dir, valid_dir, test_dir = [data_dir+s for s in ["/train", "/valid", "/test"]]
 
     normalizer = transforms.Normalize([0.485, 0.456, 0.406],
                                     [0.229, 0.224, 0.225])
@@ -61,9 +62,6 @@ def transform_and_load(dataset_directory):
         "validation": torch.utils.data.DataLoader(data["validation"], batch_size=32, shuffle=True)
     }
 
-    with open('cat_to_name.json','r') as f:
-        cat_to_name = json.load(f)
-    loaders["labels"] = cat_to_name
     return data, loaders
 
 def build_model(args):
@@ -73,21 +71,17 @@ def build_model(args):
     elif args["arch"] == 'densenet121':
         model = models.densenet121(pretrained=True)
         args["input_size"] = 1024
-    else:
-        resnet50 = torch.hub.load('NVIDIA/DeepLearningExamples:torchhub', 'nvidia_resnet50', pretrained=True)
-        args["input_size"] = 2048
     for param in model.parameters():
         param.requires_grad = False
 
     dropout_rate = args["dropout"]
     hidden_size = args["hidden_units"]
     args["output_size"] = 102
-    output_size = 102
     classifier = nn.Sequential(OrderedDict([
                             ('fc1', nn.Linear(args["input_size"], hidden_size)),
                             ('relu1', nn.ReLU()),
                             ('dropout', nn.Dropout(dropout_rate)),
-                            ('fc3', nn.Linear(hidden_size, output_size)),
+                            ('fc3', nn.Linear(hidden_size, args["output_size"])),
                             ('output', nn.LogSoftmax(dim=1))]))
     model.classifier = classifier
     return model
@@ -96,11 +90,6 @@ def optimizer_criterion(model,args):
     optimizer = optim.Adam(model.classifier.parameters(),lr=args["lr"])
     criterion = nn.NLLLoss()
     return optimizer, criterion
-
-#def optimizer_criterion(model, args):
-#    optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args["lr"])
-#    criterion = nn.NLLLoss()
-#    return optimizer, criterion
 
 def train_model(model, args, loaders, criterion, optimizer):
     model.to(args["device"])
@@ -221,7 +210,8 @@ def save_model(model, args, optimizer, data_sets):
 def main():
     torch.cuda.empty_cache()
     args = vars(parse())
-    data, loaders  = transform_and_load(args["data_dir"])
+    print(args)
+    data, loaders  = transform_and_load(args)
     set_device(args)
     model = build_model(args)
     optimizer, criterion = optimizer_criterion(model, args)
@@ -230,4 +220,4 @@ def main():
     save_model(model, args, optimizer, data)
 
 if __name__ == '__main__':
-    main()
+    main() 
